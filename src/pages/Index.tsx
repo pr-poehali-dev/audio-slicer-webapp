@@ -3,10 +3,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Icon from '@/components/ui/icon';
 import JSZip from 'jszip';
+import ID3Writer from 'browser-id3-writer';
 
 const Index = () => {
-  const [currentScreen, setCurrentScreen] = useState('home'); // 'home', 'upload', 'result'
+  const [currentScreen, setCurrentScreen] = useState('home'); // 'home', 'upload', 'result', 'merge', 'merge-result'
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedZipFile, setSelectedZipFile] = useState<File | null>(null);
   const [fps, setFps] = useState('8');
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -14,6 +16,7 @@ const Index = () => {
   const [videoDuration, setVideoDuration] = useState(0);
   const [totalChunks, setTotalChunks] = useState(0);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [mergedFilesCount, setMergedFilesCount] = useState(0);
 
   const processingPhrases = [
     '🎵 Извлекаю аудио из видео...',
@@ -22,6 +25,15 @@ const Index = () => {
     '🎨 Создаю обложки для треков...',
     '📦 Упаковываю всё в ZIP...',
     '🚀 Почти готово!'
+  ];
+
+  const mergingPhrases = [
+    '📦 Распаковываю ZIP архив...',
+    '🔍 Ищу MP3 и PNG файлы...',
+    '🎨 Добавляю обложки к аудио...',
+    '📝 Записываю метаданные ID3...',
+    '🗜️ Создаю новый архив...',
+    '🚀 Готово!'
   ];
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -35,6 +47,13 @@ const Index = () => {
         setVideoDuration(Math.floor(video.duration));
         URL.revokeObjectURL(video.src);
       };
+    }
+  };
+
+  const handleZipSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && file.type === 'application/zip') {
+      setSelectedZipFile(file);
     }
   };
 
@@ -207,14 +226,149 @@ const Index = () => {
     }
   };
 
+  const handleStartMerging = async () => {
+    if (!selectedZipFile) return;
+    
+    setIsProcessing(true);
+    setProgress(0);
+    setCurrentPhrase(0);
+    
+    try {
+      // Load ZIP
+      setCurrentPhrase(0);
+      setProgress(10);
+      
+      const zip = new JSZip();
+      const zipContent = await zip.loadAsync(selectedZipFile);
+      
+      setCurrentPhrase(1);
+      setProgress(20);
+      
+      // Find audio and cover files
+      const audioFiles: { [key: string]: JSZip.JSZipObject } = {};
+      const coverFiles: { [key: string]: JSZip.JSZipObject } = {};
+      
+      Object.keys(zipContent.files).forEach(filename => {
+        const file = zipContent.files[filename];
+        if (!file.dir) {
+          // Match audio_xxx.mp3
+          const audioMatch = filename.match(/audio_(\d{3})\.(mp3|wav)$/i);
+          if (audioMatch) {
+            audioFiles[audioMatch[1]] = file;
+          }
+          
+          // Match cover_xxx.png
+          const coverMatch = filename.match(/cover_(\d{3})\.(png|jpg|jpeg)$/i);
+          if (coverMatch) {
+            coverFiles[coverMatch[1]] = file;
+          }
+        }
+      });
+      
+      const matchedPairs = Object.keys(audioFiles).filter(key => coverFiles[key]);
+      setMergedFilesCount(matchedPairs.length);
+      
+      if (matchedPairs.length === 0) {
+        throw new Error('Не найдены соответствующие пары audio_xxx и cover_xxx файлов');
+      }
+      
+      setCurrentPhrase(2);
+      setProgress(30);
+      
+      const outputZip = new JSZip();
+      
+      for (let i = 0; i < matchedPairs.length; i++) {
+        const key = matchedPairs[i];
+        const audioFile = audioFiles[key];
+        const coverFile = coverFiles[key];
+        
+        setCurrentPhrase(2);
+        
+        // Get audio data
+        const audioArrayBuffer = await audioFile.async('arraybuffer');
+        const coverArrayBuffer = await coverFile.async('arraybuffer');
+        
+        setCurrentPhrase(3);
+        
+        // Create ID3Writer instance
+        const writer = new ID3Writer(audioArrayBuffer);
+        
+        // Set basic tags
+        writer.setFrame('TIT2', `Track ${key}`)
+          .setFrame('TPE1', 'Video Slicer')
+          .setFrame('TALB', 'Sliced Audio');
+        
+        // Add cover art
+        const coverUint8Array = new Uint8Array(coverArrayBuffer);
+        writer.setFrame('APIC', {
+          type: 3, // Front cover
+          data: coverUint8Array,
+          description: 'Cover'
+        });
+        
+        writer.addTag();
+        const taggedBuffer = writer.arrayBuffer;
+        
+        setCurrentPhrase(4);
+        
+        // Add to output ZIP
+        const originalName = audioFile.name;
+        const extension = originalName.split('.').pop() || 'mp3';
+        outputZip.file(`audio_${key}_with_cover.${extension}`, taggedBuffer);
+        
+        // Update progress
+        const progressPercent = Math.floor(((i + 1) / matchedPairs.length) * 60) + 30;
+        setProgress(progressPercent);
+      }
+      
+      // Generate final ZIP
+      setCurrentPhrase(4);
+      setProgress(95);
+      
+      const finalZipBlob = await outputZip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(finalZipBlob);
+      setDownloadUrl(url);
+      
+      setCurrentPhrase(5);
+      setProgress(100);
+      
+      setTimeout(() => {
+        setIsProcessing(false);
+        setCurrentScreen('merge-result');
+      }, 500);
+      
+    } catch (error) {
+      console.error('Error merging files:', error);
+      setIsProcessing(false);
+      alert(`Ошибка при склеивании: ${error.message}`);
+    }
+  };
+
   const handleDownloadZip = () => {
     if (downloadUrl) {
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = `video_sliced_${fps}fps.zip`;
+      const filename = currentScreen === 'merge-result' 
+        ? `merged_audio_files.zip`
+        : `video_sliced_${fps}fps.zip`;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+    }
+  };
+
+  const resetToHome = () => {
+    setCurrentScreen('home');
+    setSelectedFile(null);
+    setSelectedZipFile(null);
+    setFps('8');
+    setVideoDuration(0);
+    setTotalChunks(0);
+    setMergedFilesCount(0);
+    if (downloadUrl) {
+      URL.revokeObjectURL(downloadUrl);
+      setDownloadUrl(null);
     }
   };
 
@@ -223,14 +377,15 @@ const Index = () => {
     
     if (isProcessing) {
       phraseInterval = setInterval(() => {
-        setCurrentPhrase(prev => (prev + 1) % processingPhrases.length);
+        const phrases = currentScreen === 'merge' ? mergingPhrases : processingPhrases;
+        setCurrentPhrase(prev => (prev + 1) % phrases.length);
       }, 2000);
     }
     
     return () => {
       if (phraseInterval) clearInterval(phraseInterval);
     };
-  }, [isProcessing, processingPhrases.length]);
+  }, [isProcessing, currentScreen, processingPhrases.length, mergingPhrases.length]);
 
   return (
     <div className="min-h-screen bg-dark relative overflow-hidden">
@@ -259,15 +414,27 @@ const Index = () => {
                 </p>
               </div>
               
-              <Button 
-                onClick={() => setCurrentScreen('upload')}
-                className="glass-button text-white text-lg px-8 py-4 h-auto relative overflow-hidden group hover:scale-[1.05] transition-all duration-300"
-              >
-                <span className="relative z-10 flex items-center gap-2">
-                  Начать нарезку 🪽
-                </span>
-                <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-purple-500 opacity-20 group-hover:opacity-30 transition-opacity"></div>
-              </Button>
+              <div className="space-y-4">
+                <Button 
+                  onClick={() => setCurrentScreen('upload')}
+                  className="glass-button text-white text-lg px-8 py-4 h-auto relative overflow-hidden group hover:scale-[1.05] transition-all duration-300 w-full"
+                >
+                  <span className="relative z-10 flex items-center gap-2">
+                    Начать нарезку 🪽
+                  </span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-purple-500 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+                </Button>
+                
+                <Button 
+                  onClick={() => setCurrentScreen('merge')}
+                  className="glass-button text-white text-lg px-8 py-4 h-auto relative overflow-hidden group hover:scale-[1.05] transition-all duration-300 w-full"
+                >
+                  <span className="relative z-10 flex items-center gap-2">
+                    Склеить обложки 🪿
+                  </span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-purple-400 to-pink-500 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+                </Button>
+              </div>
             </div>
           )}
 
@@ -364,6 +531,82 @@ const Index = () => {
             </div>
           )}
 
+          {/* Merge Screen */}
+          {currentScreen === 'merge' && (
+            <div className="space-y-6 animate-fade-in">
+              <Button 
+                onClick={() => setCurrentScreen('home')}
+                variant="ghost"
+                className="text-white/80 hover:text-white p-2"
+              >
+                <Icon name="ArrowLeft" size={20} />
+              </Button>
+              
+              <div className="space-y-4">
+                <h2 className="text-2xl font-bold text-white text-center">
+                  Склеить обложки 🪿
+                </h2>
+                <p className="text-white/80 text-center text-sm">
+                  Загрузите ZIP с файлами audio_xxx.mp3 и cover_xxx.png
+                </p>
+              </div>
+              
+              {/* ZIP Upload Area */}
+              <div className="glass-card p-12 border-2 border-dashed border-white/20 hover:border-white/40 hover:scale-[1.02] transition-all duration-300 cursor-pointer relative group">
+                <input
+                  type="file"
+                  accept=".zip"
+                  onChange={handleZipSelect}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+                <div className="text-center space-y-4">
+                  <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-r from-purple-400 to-pink-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Icon name="Archive" size={32} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-semibold text-white mb-1">
+                      {selectedZipFile ? selectedZipFile.name : 'Загрузите ZIP архив'}
+                    </p>
+                    <p className="text-white/60 text-sm">
+                      С файлами audio_xxx.mp3 и cover_xxx.png
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Start Button or Progress */}
+              {isProcessing ? (
+                <div className="space-y-4">
+                  <div className="glass-card p-6 space-y-4">
+                    <div className="h-2 bg-black/40 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-purple-400 to-pink-500 transition-all duration-300 ease-out"
+                        style={{ width: `${progress}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-white/80 text-center transition-all duration-500 animate-fade-in">
+                      {mergingPhrases[currentPhrase]}
+                    </p>
+                    <p className="text-white/60 text-sm text-center">
+                      {progress}%
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  onClick={handleStartMerging}
+                  disabled={!selectedZipFile}
+                  className="w-full glass-button text-white py-4 h-auto relative overflow-hidden group wave-button hover:scale-[1.02] transition-all duration-300"
+                >
+                  <span className="relative z-10">
+                    Склеить обложки!
+                  </span>
+                  <div className="wave-animation"></div>
+                </Button>
+              )}
+            </div>
+          )}
+
           {/* Result Screen */}
           {currentScreen === 'result' && (
             <div className="text-center space-y-8 animate-fade-in">
@@ -390,21 +633,46 @@ const Index = () => {
               </Button>
 
               <Button
-                onClick={() => {
-                  setCurrentScreen('home');
-                  setSelectedFile(null);
-                  setFps('8');
-                  setVideoDuration(0);
-                  setTotalChunks(0);
-                  if (downloadUrl) {
-                    URL.revokeObjectURL(downloadUrl);
-                    setDownloadUrl(null);
-                  }
-                }}
+                onClick={resetToHome}
                 variant="ghost"
                 className="text-white/80 hover:text-white hover:scale-[1.05] transition-all duration-300"
               >
                 Создать ещё один
+              </Button>
+            </div>
+          )}
+
+          {/* Merge Result Screen */}
+          {currentScreen === 'merge-result' && (
+            <div className="text-center space-y-8 animate-fade-in">
+              <div className="glass-card p-8 space-y-4">
+                <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-r from-green-400 to-purple-400 flex items-center justify-center">
+                  <Icon name="Check" size={32} className="text-white" />
+                </div>
+                <h2 className="text-2xl font-bold text-white">
+                  Обложки склеены!
+                </h2>
+                <p className="text-white/80">
+                  Обработано {mergedFilesCount} аудио-файлов с обложками в метаданных ID3
+                </p>
+              </div>
+
+              <Button
+                onClick={handleDownloadZip}
+                className="glass-button text-white px-8 py-4 h-auto relative overflow-hidden group hover:scale-[1.05] transition-all duration-300"
+              >
+                <span className="relative z-10 flex items-center gap-2">
+                  <Icon name="Download" size={20} />
+                  Скачать ZIP ({mergedFilesCount} файлов)
+                </span>
+              </Button>
+
+              <Button
+                onClick={resetToHome}
+                variant="ghost"
+                className="text-white/80 hover:text-white hover:scale-[1.05] transition-all duration-300"
+              >
+                Склеить ещё один
               </Button>
             </div>
           )}
