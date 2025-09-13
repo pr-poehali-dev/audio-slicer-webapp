@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Icon from '@/components/ui/icon';
@@ -8,6 +8,17 @@ const Index = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fps, setFps] = useState('8');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [currentPhrase, setCurrentPhrase] = useState(0);
+
+  const processingPhrases = [
+    '🎵 Извлекаю аудио из видео...',
+    '✂️ Нарезаю на кусочки...',
+    '🖼️ Вытаскиваю кадры для обложек...',
+    '🎨 Создаю обложки для треков...',
+    '📦 Упаковываю всё в ZIP...',
+    '🚀 Почти готово!'
+  ];
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -20,12 +31,46 @@ const Index = () => {
     if (!selectedFile || !fps) return;
     
     setIsProcessing(true);
-    // Simulate processing time
-    setTimeout(() => {
-      setIsProcessing(false);
-      setCurrentScreen('result');
-    }, 3000);
+    setProgress(0);
+    setCurrentPhrase(0);
+    
+    // Simulate processing with progress
+    const interval = setInterval(() => {
+      setProgress(prev => {
+        const newProgress = prev + 2;
+        
+        // Update phrase based on progress
+        const phraseIndex = Math.floor((newProgress / 100) * processingPhrases.length);
+        if (phraseIndex < processingPhrases.length) {
+          setCurrentPhrase(phraseIndex);
+        }
+        
+        if (newProgress >= 100) {
+          clearInterval(interval);
+          setTimeout(() => {
+            setIsProcessing(false);
+            setCurrentScreen('result');
+          }, 500);
+        }
+        
+        return Math.min(newProgress, 100);
+      });
+    }, 100);
   };
+
+  useEffect(() => {
+    let phraseInterval: NodeJS.Timeout;
+    
+    if (isProcessing) {
+      phraseInterval = setInterval(() => {
+        setCurrentPhrase(prev => (prev + 1) % processingPhrases.length);
+      }, 2000);
+    }
+    
+    return () => {
+      if (phraseInterval) clearInterval(phraseInterval);
+    };
+  }, [isProcessing, processingPhrases.length]);
 
   const handleDownloadZip = () => {
     // Simulate zip download
@@ -39,6 +84,9 @@ const Index = () => {
         <div className="blob blob-1"></div>
         <div className="blob blob-2"></div>
         <div className="blob blob-3"></div>
+        <div className="blob blob-4"></div>
+        <div className="blob blob-5"></div>
+        <div className="blob blob-6"></div>
       </div>
       
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
@@ -58,7 +106,7 @@ const Index = () => {
               
               <Button 
                 onClick={() => setCurrentScreen('upload')}
-                className="glass-button text-white text-lg px-8 py-4 h-auto relative overflow-hidden group"
+                className="glass-button text-white text-lg px-8 py-4 h-auto relative overflow-hidden group hover:scale-[1.05] transition-all duration-300"
               >
                 <span className="relative z-10 flex items-center gap-2">
                   Начать нарезку 🪽
@@ -80,7 +128,7 @@ const Index = () => {
               </Button>
               
               {/* File Upload Area */}
-              <div className="glass-card p-8 border-2 border-dashed border-white/20 hover:border-white/40 transition-colors cursor-pointer relative group">
+              <div className="glass-card p-12 border-2 border-dashed border-white/20 hover:border-white/40 hover:scale-[1.02] transition-all duration-300 cursor-pointer relative group">
                 <input
                   type="file"
                   accept="video/*"
@@ -111,26 +159,43 @@ const Index = () => {
                   type="number"
                   value={fps}
                   onChange={(e) => setFps(e.target.value)}
-                  className="glass-input text-white"
+                  className="bg-black/60 border border-white/20 rounded-xl text-white placeholder:text-white/60 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 transition-all"
                   placeholder="8"
                   min="1"
                   max="60"
                 />
               </div>
 
-              {/* Start Button */}
-              <Button
-                onClick={handleStartProcessing}
-                disabled={!selectedFile || !fps || isProcessing}
-                className="w-full glass-button text-white py-4 h-auto relative overflow-hidden group wave-button"
-              >
-                <span className="relative z-10">
-                  {isProcessing ? 'Обработка...' : 'Начать!'}
-                </span>
-                {!isProcessing && (
+              {/* Start Button or Progress */}
+              {isProcessing ? (
+                <div className="space-y-4">
+                  <div className="glass-card p-6 space-y-4">
+                    <div className="h-2 bg-black/40 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-cyan-400 to-purple-500 transition-all duration-300 ease-out"
+                        style={{ width: `${progress}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-white/80 text-center transition-all duration-500 animate-fade-in">
+                      {processingPhrases[currentPhrase]}
+                    </p>
+                    <p className="text-white/60 text-sm text-center">
+                      {progress}%
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  onClick={handleStartProcessing}
+                  disabled={!selectedFile || !fps}
+                  className="w-full glass-button text-white py-4 h-auto relative overflow-hidden group wave-button hover:scale-[1.02] transition-all duration-300"
+                >
+                  <span className="relative z-10">
+                    Начать!
+                  </span>
                   <div className="wave-animation"></div>
-                )}
-              </Button>
+                </Button>
+              )}
             </div>
           )}
 
@@ -151,7 +216,7 @@ const Index = () => {
 
               <Button
                 onClick={handleDownloadZip}
-                className="glass-button text-white px-8 py-4 h-auto relative overflow-hidden group"
+                className="glass-button text-white px-8 py-4 h-auto relative overflow-hidden group hover:scale-[1.05] transition-all duration-300"
               >
                 <span className="relative z-10 flex items-center gap-2">
                   <Icon name="Download" size={20} />
@@ -166,7 +231,7 @@ const Index = () => {
                   setFps('8');
                 }}
                 variant="ghost"
-                className="text-white/80 hover:text-white"
+                className="text-white/80 hover:text-white hover:scale-[1.05] transition-all duration-300"
               >
                 Создать ещё один
               </Button>

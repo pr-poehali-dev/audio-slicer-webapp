@@ -97,10 +97,11 @@ export default {
 					'100%': { opacity: '1', transform: 'translateY(0)' }
 				},
 				'blob': {
-					'0%': { transform: 'translate(0px, 0px) scale(1)' },
-					'33%': { transform: 'translate(30px, -50px) scale(1.1)' },
-					'66%': { transform: 'translate(-20px, 20px) scale(0.9)' },
-					'100%': { transform: 'translate(0px, 0px) scale(1)' }
+					'0%': { transform: 'translate(0px, 0px) scale(1)', opacity: '0.8' },
+					'25%': { transform: 'translate(40px, -60px) scale(1.2)', opacity: '1' },
+					'50%': { transform: 'translate(-30px, 40px) scale(0.8)', opacity: '0.6' },
+					'75%': { transform: 'translate(20px, -20px) scale(1.1)', opacity: '0.9' },
+					'100%': { transform: 'translate(0px, 0px) scale(1)', opacity: '0.8' }
 				},
 				'wave': {
 					'0%': { transform: 'translateX(-100%)' },
@@ -111,7 +112,7 @@ export default {
 				'accordion-down': 'accordion-down 0.2s ease-out',
 				'accordion-up': 'accordion-up 0.2s ease-out',
 				'fade-in': 'fade-in 0.3s ease-out',
-				'blob': 'blob 7s infinite',
+				'blob': 'blob 5s infinite ease-in-out',
 				'wave': 'wave 2s linear infinite'
 			}
 		}
